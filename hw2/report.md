@@ -62,4 +62,61 @@
 | 4 | Извлечение метаданных только из разрешённых тегов (`<title>`, `<desc>`, `<metadata>`) | `var metadata = doc.QuerySelectorAll("title, desc, metadata").Select(e => e.TextContent);` |
 | 5 | Обработка `AngleSharpException` без утечки деталей парсинга | `catch (AngleSharpException) { logger.LogWarning("Invalid SVG structure"); }` |
 
+### 4. Автоматизированная проверка правил безопасного кодирования с помощью Semgrep
 
+#### 4.1. Правила Semgrep
+
+| ID правила | Проверяемое нарушение | Библиотека | Приоритет |
+|------------|----------------------|------------|-----------|
+| `metadataextractor-missing-stream-validation` | Отсутствие проверки размера потока перед парсингом | MetadataExtractor | ERROR |
+| `missing-cancellation-token-for-parsing` | Отсутствие CancellationToken с таймаутом | Все | WARNING |
+| `missing-magic-bytes-validation` | Отсутствие проверки сигнатуры файла | Все | WARNING |
+| `pdfpig-missing-parsing-options` | Открытие PDF без явного ParsingOptions | PdfPig | WARNING |
+| `anglesharp-missing-without-scripting` | Использование Configuration.Default без отключения скриптов | AngleSharp | ERROR |
+| `anglesharp-unsafe-xml-settings` | XmlReaderSettings без защиты от XXE | AngleSharp | ERROR |
+| `metadataextractor-no-file-path-usage` | Использование пути к файлу вместо Stream | MetadataExtractor | ERROR |
+| `pdfpig-no-file-path-usage` | Использование пути к файлу вместо Stream | PdfPig | ERROR |
+| `exception-details-leak` | Вывод деталей исключения пользователю | Все | WARNING |
+| `no-read-all-bytes-for-parsing` | Загрузка файла в память через ReadAllBytes | Все | WARNING |
+
+Полный файл правил: [semgrep-rules.yaml](./semgrep-rules.yaml)
+
+#### 4.2. Тестирование
+
+**Тестовые данные:**
+- [unsafe_examples.cs](test-cases/unsafe/unsafe_examples.cs) — методы с намеренными нарушениями правил безопасности
+
+**Скрипт для автоматической проверки:**
+- [test-semgrep.sh](./test-semgrep.sh)
+
+#### 4.3. Результаты выполнения
+
+**Запуск скрипта для автоматического сканирования:**
+```bash
+user@SUBD-KhasanovaUN:~/hw2$ ./test-semgrep.sh
+[INFO] Все тесты пройдены успешно
+[INFO] Отчёт сохранён в semgrep-report.json
+```
+
+**Отчет о работе тестового скрипта:** [semgrep-report.json](./semgrep-report.json)
+
+| Показатель | Значение |
+|------------|----------|
+| Всего просканировано файлов | 1 |
+| Всего применено правил | 10 |
+| Обнаружено нарушений | **19** |
+| Нарушения уровня ERROR | 10 |
+| Нарушения уровня WARNING | 9 |
+
+
+#### 4.4. Статистика обнаружений по правилам
+
+| Правило | Уровень | Кол-во | Описание нарушения |
+|---------|---------|--------|-------------------|
+| `metadataextractor-missing-stream-validation` | ERROR | 7 | Отсутствие проверки размера потока перед парсингом в MetadataExtractor |
+| `missing-cancellation-token-for-parsing` | WARNING | 7 | Отсутствие CancellationToken с таймаутом при парсинге |
+| `missing-magic-bytes-validation` | WARNING | 7 | Отсутствие проверки сигнатуры файла (magic bytes) |
+| `pdfpig-missing-parsing-options` | WARNING | 1 | Открытие PDF без явного указания ParsingOptions в PdfPig |
+| `anglesharp-missing-without-scripting` | ERROR | 1 | Использование Configuration.Default без отключения скриптов в AngleSharp |
+| `anglesharp-unsafe-xml-settings` | ERROR | 1 | XmlReaderSettings без защиты от XXE-атак |
+| `no-read-all-bytes-for-parsing` | WARNING | 1 | Загрузка файла в память через File.ReadAllBytes |

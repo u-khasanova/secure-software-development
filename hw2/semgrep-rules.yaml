@@ -1,0 +1,121 @@
+rules:
+
+  - id: metadataextractor-no-file-path-usage
+    patterns:
+      - pattern-either:
+          - pattern-regex: 'ImageMetadataReader\.ReadMetadata\s*\(\s*["\x27][^"\x27]*\.(jpg|jpeg|png|gif|bmp|tiff|webp)["\x27]\s*\)'
+          - pattern-regex: 'ImageMetadataReader\.ReadMetadata\s*\(\s*@"[^"]*"\s*\)'
+    message: "MetadataExtractor: не используйте путь к файлу напрямую. Используйте Stream с предварительной валидацией размера и сигнатуры."
+    severity: ERROR
+    languages: [csharp]
+
+  - id: metadataextractor-missing-stream-validation
+    patterns:
+      - pattern: ImageMetadataReader.ReadMetadata($STREAM)
+      - pattern-not-inside: |
+          if ($STREAM.Length <= $MAX) { ... }
+      - pattern-not-inside: |
+          if ($STREAM.Length > $MAX) { ... }
+    message: "MetadataExtractor: перед парсингом проверьте размер потока для защиты от атак типа DoS"
+    severity: ERROR
+    languages: [csharp]
+
+  - id: pdfpig-no-file-path-usage
+    patterns:
+      - pattern-either:
+          - pattern-regex: 'PdfDocument\.Open\s*\(\s*["\x27][^"\x27]*\.pdf["\x27]\s*\)'
+          - pattern-regex: 'PdfDocument\.Open\s*\(\s*@"[^"]*\.pdf"\s*\)'
+          - pattern-regex: 'PdfDocument\.Open\s*\(\s*["\x27][^"\x27]*\.PDF["\x27]\s*\)'
+    message: "PdfPig: не используйте путь к файлу напрямую. Используйте перегрузку с Stream и ParsingOptions."
+    severity: ERROR
+    languages: [csharp]
+
+  - id: pdfpig-missing-parsing-options
+    patterns:
+      - pattern: PdfDocument.Open($STREAM)
+      - pattern-not: PdfDocument.Open($STREAM, $OPTIONS)
+    message: "PdfPig: явно передавайте ParsingOptions с AllowUnsafeParsing = false для отключения выполнения скриптов."
+    severity: WARNING
+    languages: [csharp]
+
+  - id: anglesharp-missing-without-scripting
+    patterns:
+      - pattern: Configuration.Default
+      - pattern-not: Configuration.Default.WithoutScripting()
+    message: "AngleSharp: используйте Configuration.Default.WithoutScripting() для отключения выполнения скриптов в SVG/HTML"
+    severity: ERROR
+    languages: [csharp]
+
+  - id: anglesharp-unsafe-xml-settings
+    patterns:
+      - pattern: new XmlReaderSettings()
+      - pattern-not-inside: |
+          new XmlReaderSettings { 
+            ..., 
+            DtdProcessing = DtdProcessing.Prohibit, 
+            ...,
+            XmlResolver = null,
+            ... 
+          }
+    message: "XmlReaderSettings: установите DtdProcessing = Prohibit и XmlResolver = null для защиты от XXE-атак"
+    severity: ERROR
+    languages: [csharp]
+
+  - id: no-read-all-bytes-for-parsing
+    patterns:
+      - pattern: File.ReadAllBytes($PATH)
+      - pattern-not-regex: '\.(Test|Tests|Testing|Specs)\.'
+      - pattern-not-regex: 'Path\.GetTempFileName\(\)'
+      - pattern-not-regex: 'Path\.Combine\([^)]*["\x27]tmp["\x27][^)]*\)'
+    message: "File.ReadAllBytes загружает весь файл в память. Используйте потоковый API с проверкой размера для обработки недоверенных файлов."
+    severity: WARNING
+    languages: [csharp]
+
+  - id: exception-details-leak
+    patterns:
+      - pattern-either:
+          - pattern: Console.WriteLine($ARG, $EX.Message)
+          - pattern: Console.WriteLine($ARG, $EX.StackTrace)
+          - pattern: Console.Write($EX.Message)
+          - pattern: Console.Write($EX.StackTrace)
+          - pattern: return $EX.Message;
+          - pattern: return $EX.StackTrace;
+          - pattern-regex: 'Console\.(Write|WriteLine)\s*\(\s*\$"[^"]*\{[^}]*\.(Message|StackTrace)[^}]*\}[^"]*"\s*\)'
+          - pattern-regex: 'return\s+\$"[^"]*\{[^}]*\.(Message|StackTrace)[^}]*\}[^"]*";'
+          - pattern: await $RESP.WriteAsync($EX.Message);
+          - pattern: $RESP.Write($EX.Message);
+          - pattern-regex: 'Console\.(Write|WriteLine)\s*\(\s*[^;]*\+\s*\$?(EX\.(Message|StackTrace)|ex\.(Message|StackTrace))[^;]*\)'
+      
+      - pattern-inside: |
+          catch ($EX) {
+            ...
+          }
+    message: "Не выводите детали исключений (Message, StackTrace) пользователю. Используйте безопасное логирование."
+    severity: WARNING
+    languages: [csharp]
+
+  - id: missing-cancellation-token-for-parsing
+    patterns:
+      - pattern: ImageMetadataReader.ReadMetadata($STREAM)
+      - pattern-not-inside: |
+          using var $CTS = new CancellationTokenSource($TIMEOUT);
+          ...
+          ImageMetadataReader.ReadMetadata($STREAM, $CTS.Token);
+      - pattern-not-inside: |
+          var $CT = ...;
+          ...
+          ImageMetadataReader.ReadMetadata($STREAM, $CT);
+    message: "Используйте CancellationToken с таймаутом при парсинге недоверенных данных для защиты от зависаний"
+    severity: WARNING
+    languages: [csharp]
+
+  - id: missing-magic-bytes-validation
+    patterns:
+      - pattern: ImageMetadataReader.ReadMetadata($STREAM)
+      - pattern-not-inside: |
+          $STREAM.Read($MAGIC, ...);
+          ...
+          if (IsValidSignature($MAGIC, ...)) { ... }
+    message: "Проверяйте магические байты файла перед парсингом для предотвращения обработки поддельных файлов"
+    severity: WARNING
+    languages: [csharp]
